@@ -101,3 +101,8 @@ ENV/
 
 # pycharm
 .idea/
+
+data/.DS_Store
+data/METR-LA/
+data/dcrnn_predictions.npz
+data/model/pretrained/events.out.tfevents.1548041225.s-MacBook-ea.local

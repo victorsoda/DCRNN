@@ -16,6 +16,7 @@ from lib.metrics import masked_mae_loss
 from model.dcrnn_model import DCRNNModel
 
 
+
 class DCRNNSupervisor(object):
     """
     Do experiments using Graph Random Walk RNN model.
@@ -36,21 +37,21 @@ class DCRNNSupervisor(object):
         self._logger.info(kwargs)
 
         # Data preparation
-        self._data = utils.load_dataset(**self._data_kwargs)
+        self._data = utils.load_dataset(**self._data_kwargs)  # return 3 DataLoaders and 1 scaler
         for k, v in self._data.items():
             if hasattr(v, 'shape'):
                 self._logger.info((k, v.shape))
 
         # Build models.
         scaler = self._data['scaler']
-        with tf.name_scope('Train'):
-            with tf.variable_scope('DCRNN', reuse=False):
+        with tf.name_scope('Train'):  # reuse、variable_scope讲解：https://www.jianshu.com/p/ab0d38725f88
+            with tf.variable_scope('DCRNN', reuse=False):  # reuse==False的含义: 该作用域下创建的变量不会重用
                 self._train_model = DCRNNModel(is_training=True, scaler=scaler,
                                                batch_size=self._data_kwargs['batch_size'],
                                                adj_mx=adj_mx, **self._model_kwargs)
 
         with tf.name_scope('Test'):
-            with tf.variable_scope('DCRNN', reuse=True):
+            with tf.variable_scope('DCRNN', reuse=True):  # 测试时创建的变量可以重用
                 self._test_model = DCRNNModel(is_training=False, scaler=scaler,
                                               batch_size=self._data_kwargs['test_batch_size'],
                                               adj_mx=adj_mx, **self._model_kwargs)
@@ -62,7 +63,7 @@ class DCRNNSupervisor(object):
         self._lr_update = tf.assign(self._lr, self._new_lr, name='lr_update')
 
         # Configure optimizer
-        optimizer_name = self._train_kwargs.get('optimizer', 'adam').lower()
+        optimizer_name = self._train_kwargs.get('optimizer', 'adam').lower()  # 默认是'adam'
         epsilon = float(self._train_kwargs.get('epsilon', 1e-3))
         optimizer = tf.train.AdamOptimizer(self._lr, epsilon=epsilon)
         if optimizer_name == 'sgd':
@@ -71,7 +72,7 @@ class DCRNNSupervisor(object):
             optimizer = AMSGrad(self._lr, epsilon=epsilon)
 
         # Calculate loss
-        output_dim = self._model_kwargs.get('output_dim')
+        output_dim = self._model_kwargs.get('output_dim')  # output_dim在配置文件里写的1，指只预测speed这一个特征
         preds = self._train_model.outputs
         labels = self._train_model.labels[..., :output_dim]
 
@@ -82,13 +83,13 @@ class DCRNNSupervisor(object):
         tvars = tf.trainable_variables()
         grads = tf.gradients(self._train_loss, tvars)
         max_grad_norm = kwargs['train'].get('max_grad_norm', 1.)
-        grads, _ = tf.clip_by_global_norm(grads, max_grad_norm)
+        grads, _ = tf.clip_by_global_norm(grads, max_grad_norm)  # 在一次迭代更新中，所有权重的梯度的平方和在一个设定范围以内，这个范围就是clip_gradient.
         global_step = tf.train.get_or_create_global_step()
         self._train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=global_step, name='train_op')
 
         max_to_keep = self._train_kwargs.get('max_to_keep', 100)
         self._epoch = 0
-        self._saver = tf.train.Saver(tf.global_variables(), max_to_keep=max_to_keep)
+        self._saver = tf.train.Saver(tf.global_variables(), max_to_keep=max_to_keep)  # Saver将保存最近的max_to_keep个模型
 
         # Log model statistics.
         total_trainable_parameter = utils.get_total_trainable_parameter_size()
@@ -99,7 +100,7 @@ class DCRNNSupervisor(object):
     @staticmethod
     def _get_log_dir(kwargs):
         log_dir = kwargs['train'].get('log_dir')
-        if log_dir is None:
+        if log_dir is None:  # 默认的log_dir命名方法
             batch_size = kwargs['data'].get('batch_size')
             learning_rate = kwargs['train'].get('base_lr')
             max_diffusion_step = kwargs['model'].get('max_diffusion_step')
@@ -132,7 +133,7 @@ class DCRNNSupervisor(object):
         preds = model.outputs
         labels = model.labels[..., :output_dim]
         loss = self._loss_fn(preds=preds, labels=labels)
-        fetches = {
+        fetches = {   # fetches包含多个可以run的function
             'loss': loss,
             'mae': loss,
             'global_step': tf.train.get_or_create_global_step()
@@ -141,7 +142,7 @@ class DCRNNSupervisor(object):
             fetches.update({
                 'train_op': self._train_op
             })
-            merged = model.merged
+            merged = model.merged  # ToDo: merged怎么理解？
             if merged is not None:
                 fetches.update({'merged': merged})
 
@@ -150,13 +151,14 @@ class DCRNNSupervisor(object):
                 'outputs': model.outputs
             })
 
-        for _, (x, y) in enumerate(data_generator):
+        for _, (x, y) in enumerate(data_generator):  # 每次产生一个batch_size=64条x
             feed_dict = {
                 model.inputs: x,
                 model.labels: y,
             }
 
-            vals = sess.run(fetches, feed_dict=feed_dict)
+            vals = sess.run(fetches, feed_dict=feed_dict)  # fetches字典的value是函数，
+            # run完返回的vals字典与fetches同key，而value是那些函数返回的结果
 
             losses.append(vals['loss'])
             maes.append(vals['mae'])
@@ -193,7 +195,7 @@ class DCRNNSupervisor(object):
         wait = 0
 
         max_to_keep = train_kwargs.get('max_to_keep', 100)
-        saver = tf.train.Saver(tf.global_variables(), max_to_keep=max_to_keep)
+        saver = tf.train.Saver(tf.global_variables(), max_to_keep=max_to_keep)  # 第一个参数var_list指定要保存和恢复的变量
         model_filename = train_kwargs.get('model_filename')
         if model_filename is not None:
             saver.restore(sess, model_filename)
@@ -218,6 +220,18 @@ class DCRNNSupervisor(object):
                 break
 
             global_step = sess.run(tf.train.get_or_create_global_step())
+            '''
+            global_step refer to the number of batches seen by the graph. 
+            Everytime a batch is provided, the weights are updated in the direction that minimizes the loss. 
+            global_step just keeps track of the number of batches seen so far. 
+            When it is passed in the minimize() argument list, the variable is increased by one. Have a look at optimizer.minimize().
+
+            You can get the global_step value using tf.train.global_step().
+            
+            The 0 is the initial value of the global step in this context.
+            
+            讲解global_step的好博客：https://blog.csdn.net/leviopku/article/details/78508951
+            '''
             # Compute validation error.
             val_results = self.run_epoch_generator(sess, self._test_model,
                                                    self._data['val_loader'].get_iterator(),
@@ -236,7 +250,7 @@ class DCRNNSupervisor(object):
             if val_loss <= min_val_loss:
                 wait = 0
                 if save_model > 0:
-                    model_filename = self.save(sess, val_loss)
+                    model_filename = self.save(sess, val_loss)  # save()同时记录了config_x.yaml配置文件(x=epoch)
                 self._logger.info(
                     'Val loss decrease from %.4f to %.4f, saving to %s' % (min_val_loss, val_loss, model_filename))
                 min_val_loss = val_loss
@@ -250,7 +264,7 @@ class DCRNNSupervisor(object):
             # Increases epoch.
             self._epoch += 1
 
-            sys.stdout.flush()
+            sys.stdout.flush()  # 即将缓冲区中的数据立刻写入文件，同时清空缓冲区，不需要是被动的等待输出缓冲区写入
         return np.min(history)
 
     def evaluate(self, sess, **kwargs):
@@ -258,11 +272,11 @@ class DCRNNSupervisor(object):
         test_results = self.run_epoch_generator(sess, self._test_model,
                                                 self._data['test_loader'].get_iterator(),
                                                 return_output=True,
-                                                training=False)
+                                                training=False)  # 主要返回本轮epoch计算出的loss和outputs（预测值）
 
         # y_preds:  a list of (batch_size, horizon, num_nodes, output_dim)
         test_loss, y_preds = test_results['loss'], test_results['outputs']
-        utils.add_simple_summary(self._writer, ['loss/test_loss'], [test_loss], global_step=global_step)
+        utils.add_simple_summary(self._writer, ['loss/test_loss'], [test_loss], global_step=global_step)  # ToDo: Summary机制？
 
         y_preds = np.concatenate(y_preds, axis=0)
         scaler = self._data['scaler']
@@ -272,7 +286,7 @@ class DCRNNSupervisor(object):
             y_truth = scaler.inverse_transform(self._data['y_test'][:, horizon_i, :, 0])
             y_truths.append(y_truth)
 
-            y_pred = scaler.inverse_transform(y_preds[:y_truth.shape[0], horizon_i, :, 0])
+            y_pred = scaler.inverse_transform(y_preds[:y_truth.shape[0], horizon_i, :, 0])  # ToDo: y_preds的第0维为什么会比y_truth多？
             predictions.append(y_pred)
 
             mae = metrics.masked_mae_np(y_pred, y_truth, null_val=0)

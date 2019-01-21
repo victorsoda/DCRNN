@@ -20,7 +20,7 @@ def run_dcrnn(args):
     _, _, adj_mx = load_graph_data(graph_pkl_filename)
     with tf.Session(config=tf_config) as sess:
         supervisor = DCRNNSupervisor(adj_mx=adj_mx, **config)
-        supervisor.load(sess, config['train']['model_filename'])
+        supervisor.load(sess, config['train']['model_filename'])  # 获取之前保存好的pretrained模型
         outputs = supervisor.evaluate(sess)
         np.savez_compressed(args.output_filename, **outputs)
         print('Predictions saved as {}.'.format(args.output_filename))
@@ -29,7 +29,7 @@ def run_dcrnn(args):
 if __name__ == '__main__':
     sys.path.append(os.getcwd())
     parser = argparse.ArgumentParser()
-    parser.add_argument('--use_cpu_only', default=False, type=str, help='Whether to run tensorflow on cpu.')
+    parser.add_argument('--use_cpu_only', default=True, type=str, help='Whether to run tensorflow on cpu.')
     parser.add_argument('--config_filename', default='data/model/pretrained/config.yaml', type=str,
                         help='Config file for pretrained model.')
     parser.add_argument('--output_filename', default='data/dcrnn_predictions.npz')

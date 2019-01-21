@@ -39,7 +39,7 @@ class DCGRUCell(RNNCell):
         self._activation = activation
         self._num_nodes = num_nodes
         self._num_proj = num_proj
-        self._num_units = num_units
+        self._num_units = num_units  # rnn_units, config中是64
         self._max_diffusion_step = max_diffusion_step
         self._supports = []
         self._use_gc_for_ru = use_gc_for_ru
@@ -83,7 +83,7 @@ class DCGRUCell(RNNCell):
         - New state: Either a single `2-D` tensor, or a tuple of tensors matching
             the arity and shapes of `state`
         """
-        with tf.variable_scope(scope or "dcgru_cell"):
+        with tf.variable_scope(scope or "dcgru_cell"):  # 【加入Graph Convolution后的GRU公式】
             with tf.variable_scope("gates"):  # Reset gate and update gate.
                 output_size = 2 * self._num_units
                 # We start with bias of 1.0 to not reset and not update.
@@ -100,12 +100,12 @@ class DCGRUCell(RNNCell):
                 c = self._gconv(inputs, r * state, self._num_units)
                 if self._activation is not None:
                     c = self._activation(c)
-            output = new_state = u * state + (1 - u) * c
+            output = new_state = u * state + (1 - u) * c  # 公式中的H，作为新状态，也是当前一步的输出
             if self._num_proj is not None:
                 with tf.variable_scope("projection"):
                     w = tf.get_variable('w', shape=(self._num_units, self._num_proj))
                     batch_size = inputs.get_shape()[0].value
-                    output = tf.reshape(new_state, shape=(-1, self._num_units))
+                    output = tf.reshape(new_state, shape=(-1, self._num_units))  # ToDo: 这两个reshape操作没太看懂
                     output = tf.reshape(tf.matmul(output, w), shape=(batch_size, self.output_size))
         return output, new_state
 
@@ -148,7 +148,7 @@ class DCGRUCell(RNNCell):
         input_size = inputs_and_state.get_shape()[2].value
         dtype = inputs.dtype
 
-        x = inputs_and_state
+        x = inputs_and_state  # 公式里的 [X_t, H_t]
         x0 = tf.transpose(x, perm=[1, 2, 0])  # (num_nodes, total_arg_size, batch_size)
         x0 = tf.reshape(x0, shape=[self._num_nodes, input_size * batch_size])
         x = tf.expand_dims(x0, axis=0)

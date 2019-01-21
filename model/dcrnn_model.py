@@ -38,6 +38,7 @@ class DCRNNModel(object):
         self._inputs = tf.placeholder(tf.float32, shape=(batch_size, seq_len, num_nodes, input_dim), name='inputs')
         # Labels: (batch_size, timesteps, num_sensor, input_dim), same format with input except the temporal dimension.
         self._labels = tf.placeholder(tf.float32, shape=(batch_size, horizon, num_nodes, input_dim), name='labels')
+        # 注：seq_len是输入的序列长度，horizon是输出的序列长度
 
         # GO_SYMBOL = tf.zeros(shape=(batch_size, num_nodes * input_dim))
         GO_SYMBOL = tf.zeros(shape=(batch_size, num_nodes * output_dim))
@@ -55,17 +56,18 @@ class DCRNNModel(object):
         # Outputs: (batch_size, timesteps, num_nodes, output_dim)
         with tf.variable_scope('DCRNN_SEQ'):
             inputs = tf.unstack(tf.reshape(self._inputs, (batch_size, seq_len, num_nodes * input_dim)), axis=1)
-            labels = tf.unstack(
+            labels = tf.unstack(  # unstack把inputs和labels按timesteps拆分成12份，再组成一个list
+                                  # unstack讲解：https://www.jianshu.com/p/25706575f8d4
                 tf.reshape(self._labels[..., :output_dim], (batch_size, horizon, num_nodes * output_dim)), axis=1)
-            if aux_dim > 0:
+            if aux_dim > 0:  # ToDo: input_dim - output_dim > 0 时是怎么处理的？
                 aux_info = tf.unstack(self._labels[..., output_dim:], axis=1)
-                aux_info.insert(0, None)
-            labels.insert(0, GO_SYMBOL)
+                aux_info.insert(0, None)  # insert(index, object)
+            labels.insert(0, GO_SYMBOL)  # ToDo: ?
 
             def _loop_function(prev, i):
                 if is_training:
                     # Return either the model's prediction or the previous ground truth in training.
-                    if use_curriculum_learning:
+                    if use_curriculum_learning:  # 【Scheduled Sampling策略】
                         c = tf.random_uniform((), minval=0, maxval=1.)
                         threshold = self._compute_sampling_threshold(global_step, cl_decay_steps)
                         result = tf.cond(tf.less(c, threshold), lambda: labels[i], lambda: prev)
@@ -80,6 +82,10 @@ class DCRNNModel(object):
                     result = tf.reshape(result, (batch_size, num_nodes * input_dim))
                 return result
 
+            # 调库两行完成seq2seq的encoder-decoder过程
+            # legacy_seq2seq库是静态展开，即要求输入序列都是指定的长度；seq2seq库是动态展开
+            # 但是不管静态还是动态seq2seq库，输入的每一个batch内的序列长度都要一样。
+            # legacy_seq2seq模块讲解：https://blog.csdn.net/u012871493/article/details/72350332
             _, enc_state = tf.contrib.rnn.static_rnn(encoding_cells, inputs, dtype=tf.float32)
             outputs, final_state = legacy_seq2seq.rnn_decoder(labels, enc_state, decoding_cells,
                                                               loop_function=_loop_function)
@@ -87,7 +93,7 @@ class DCRNNModel(object):
         # Project the output to output_dim.
         outputs = tf.stack(outputs[:-1], axis=1)
         self._outputs = tf.reshape(outputs, (batch_size, horizon, num_nodes, output_dim), name='outputs')
-        self._merged = tf.summary.merge_all()
+        self._merged = tf.summary.merge_all()  # ToDo: merge_all?
 
     @staticmethod
     def _compute_sampling_threshold(global_step, k):
