@@ -102,6 +102,8 @@ ENV/
 # pycharm
 .idea/
 
+.DS_Store
+tmp/
 data/.DS_Store
 data/METR-LA/
 data/dcrnn_predictions.npz
